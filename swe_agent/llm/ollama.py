@@ -18,7 +18,7 @@ NS = 1e9
 
 class OllamaClient:
     def __init__(self, model: str, base_url: str = "http://localhost:11434", *,
-                 num_ctx: int = 16_384, temperature: float = 0.0, think: bool | None = False,
+                 num_ctx: int = 12_288, temperature: float = 0.0, think: bool | None = False,
                  num_predict: int = 2_048, num_gpu: int | None = None,
                  num_thread: int | None = None, keep_alive: str = "30m",
                  timeout: float = 900.0, retries: int = 2, stream: bool = True,

@@ -89,7 +89,7 @@ def run(args) -> list[dict]:
             rows.append(row)
             print(f"  {row['prompt_tok']:>6} tok | prefill {row['prefill_s']:7.1f}s "
                   f"({row['prefill_tps']:6.1f} tok/s) | gen {row['gen_tps']:5.1f} tok/s | "
-                  f"con caché: {row['cache_prompt_tok']} tok en {row['cache_prefill_s']:.1f}s",
+                  f"con caché: {row['cache_prefill_s']:.1f}s",
                   flush=True)
     return rows
 
@@ -98,9 +98,9 @@ def to_markdown(rows: list[dict], args) -> str:
     head = (f"# Benchmark de Ollama\n\n- Modelo: `{args.model}` · num_ctx {args.num_ctx}\n"
             f"- Fecha: {time.strftime('%Y-%m-%d %H:%M')} · {platform.platform()}\n\n"
             "| Modo | Reparto | Prompt (tok) | Prefill (s) | Prefill (tok/s) | Generación (tok/s) "
-            "| Con caché: tok leídos | Con caché: s |\n|---|---|---|---|---|---|---|---|\n")
+            "| Con caché: prefill (s) |\n|---|---|---|---|---|---|---|\n")
     body = "".join(f"| {r['modo']} | {r['gpu']} | {r['prompt_tok']} | {r['prefill_s']:.1f} | "
-                   f"{r['prefill_tps']:.1f} | {r['gen_tps']:.1f} | {r['cache_prompt_tok']} | "
+                   f"{r['prefill_tps']:.1f} | {r['gen_tps']:.1f} | "
                    f"{r['cache_prefill_s']:.1f} |\n" for r in rows)
     return head + body
 

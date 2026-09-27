@@ -27,7 +27,7 @@ class Config:
     stuck_warn_first: bool = True         # avisar una vez al modelo antes de abortar
 
     # --------------------------------------------------------------- contexto (ADR-007)
-    ctx_budget_tokens: int = 12_000       # prompt máximo (num_ctx 16k menos margen de respuesta)
+    ctx_budget_tokens: int = 8_000        # prompt máximo; a 14k la generación cae a ~1 tok/s (docs/BENCHMARK.md)
     condense_block: int = 6               # K: se condensa de a bloques para no mover el prefijo
 
     # --------------------------------------------------------------- tarea (ADR-004)

@@ -62,7 +62,7 @@ def test_ollama_stream_junta_trozos_think_y_metricas(server):
     assert (c.prompt_tokens, c.completion_tokens, c.prompt_eval_s) == (900, 12, 3.0)
     req = server["requests"][0]
     assert req["path"] == "/api/chat" and req["body"]["think"] is False
-    assert req["body"]["options"]["num_ctx"] == 16_384 and req["body"]["options"]["num_gpu"] == 0
+    assert req["body"]["options"]["num_ctx"] == 12_288 and req["body"]["options"]["num_gpu"] == 0
 
 
 def test_ollama_think_none_no_se_envia(server):

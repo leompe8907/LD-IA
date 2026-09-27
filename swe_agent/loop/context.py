@@ -22,7 +22,7 @@ class TokenEstimator:
     """chars -> tokens. Arranca conservador y se calibra con los tokens reales que
     devuelve el proveedor (Completion.prompt_tokens)."""
 
-    def __init__(self, chars_per_token: float = 3.0):
+    def __init__(self, chars_per_token: float = 2.5):   # código medido: ~2.5 (BENCHMARK.md)
         self.cpt = chars_per_token
 
     def estimate(self, chars: int) -> int:

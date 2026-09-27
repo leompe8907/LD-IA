@@ -43,7 +43,7 @@ def main() -> int:
     ap.add_argument("--base-url")
     ap.add_argument("--sandbox", choices=["docker", "local"], default="docker")
     ap.add_argument("--max-steps", type=int, default=40)
-    ap.add_argument("--num-ctx", type=int, default=16_384)
+    ap.add_argument("--num-ctx", type=int, default=12_288)
     ap.add_argument("--num-gpu", type=int, help="capas en GPU (0 = solo CPU; default automático)")
     ap.add_argument("--think", action="store_true", help="activa el razonamiento de Qwen3 (lento)")
     ap.add_argument("--test-cmd", help="pista para el agente, p.ej. 'python -m pytest -q'")

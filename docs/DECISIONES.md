@@ -271,6 +271,17 @@ no responde.
 - Stuck: con `stuck_repeats=3` avisa en la 2.ª repetición y aborta en la 3.ª (cumple
   "≤ 3 pasos idénticos"). También aborta con 6 errores seguidos, aunque sean distintos.
 
+## ADR-013 — Valores fijados por el benchmark (completa ADR-010)
+*2026-09-27 · Claude · datos en [BENCHMARK.md](BENCHMARK.md)*
+
+- Reparto GPU/CPU **automático** de Ollama: duplica la lectura del prompt (46–67 contra
+  20–33 tok/s). No mejora la generación.
+- `Config.ctx_budget_tokens` pasa de 12000 a **8000** (cambio de default, no de contrato):
+  la generación cae de 3.6 tok/s con 2.4k de contexto a 1.1 tok/s con 14k.
+  `num_ctx` por defecto es 12288 en `OllamaClient` y `run_local.py`.
+- `TokenEstimator` arranca en **2.5** chars/token (medido en código) en vez de 3.0.
+- `think` apagado por defecto: el razonamiento cuesta minutos por paso a estas velocidades.
+
 ---
 
 ## Pedidos entre agentes
