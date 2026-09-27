@@ -9,6 +9,7 @@ Los observers reciben cada registro justo después de escribirse (logger en vivo
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,7 +46,11 @@ class EventLog:
         with self.path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
         for obs in self.observers:
-            obs(record)
+            try:
+                obs(record)
+            except Exception as e:   # un logger roto no puede tumbar el episodio
+                print(f"[EventLog] observer {obs!r} falló: {type(e).__name__}: {e}",
+                      file=sys.stderr)
 
     def header(self, **info) -> None:
         self._write({"type": "header", "schema": SCHEMA_VERSION, "ts": time.time(), **info})
