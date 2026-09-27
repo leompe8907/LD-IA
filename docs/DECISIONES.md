@@ -250,6 +250,27 @@ Los tests del **agente** corren en el host; los tests del **repo objetivo** corr
 sandbox. Marcadores `@pytest.mark.docker` y `@pytest.mark.ollama`: se saltan si el servicio
 no responde.
 
+## ADR-012 — Detalles de la parte de Claude que ven los demás módulos
+*2026-09-27 · Claude*
+
+- `run_episode(task, llm, cfg, *, sandbox=None, policy=None, observers=(), log_path=None)
+  -> EpisodeResult`. Si no se pasa `sandbox`, usa `make_sandbox(cfg)` y lo cierra al final.
+  `policy=None` significa sin política (el CLI pasa `DefaultPolicy()`).
+- **Status** del footer: `submitted | stuck | max_steps | llm_error | sandbox_error |
+  git_error | internal_error` (se agregaron los dos últimos). Con `internal_error`, el loop
+  cierra el log y re-lanza la excepción.
+- **Flags** de `Event.flags`: `multi_action`, `lint_rejected`, `line_prefix_fixed`, `timeout`,
+  `stuck_warning`, `internal_error`.
+- `Event.llm` es `Completion.meta()`: **las claves siempre están**, pero `prompt_tokens`,
+  `completion_tokens` y `prompt_eval_s` pueden ser `None` (el proveedor no informa).
+- `submit` se rechaza si el parche está vacío. `run_episode` no arranca si el repo tiene
+  cambios sin commitear o archivos sin trackear (`GitError`, antes de crear el log).
+- Rutas: `/workspace/x` (lo que el modelo ve en Docker) se traduce a `x`; `.git` es
+  intocable desde view/create/str_replace.
+- Dobles de prueba en `tests/fakes.py`: `ScriptedSandbox`, `HostSandbox` (Git Bash real).
+- Stuck: con `stuck_repeats=3` avisa en la 2.ª repetición y aborta en la 3.ª (cumple
+  "≤ 3 pasos idénticos"). También aborta con 6 errores seguidos, aunque sean distintos.
+
 ---
 
 ## Pedidos entre agentes
