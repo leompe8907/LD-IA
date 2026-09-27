@@ -33,7 +33,7 @@ def test_tiempos_variables_no_esconden_el_bucle():
 def test_ciclo_a_b_a_b():
     d = StuckDetector(3)
     res = [d.update(x, o, "h") for x, o in [(A, "f"), (B, "v"), (A, "f"), (B, "v")]]
-    assert res == [OK, OK, OK, STUCK]
+    assert res == [OK, OK, WARN, STUCK]            # el 3.er paso ya revisita un bash
 
 
 def test_errores_consecutivos_distintos():
@@ -50,3 +50,16 @@ def test_recuperarse_rearma_el_aviso():
     assert d.update(B, "z", "h2") == OK
     assert d.update(A, "w", "h3") == OK
     assert d.update(A, "w", "h3") == WARN          # vuelve a avisar en un bucle nuevo
+
+
+def test_oscilacion_de_contenido_observada_con_qwen3():
+    """Episodio real: a*b -> test falla -> a*b*2 -> falla -> a*b -> falla... Cada commit es
+    nuevo, pero el ÁRBOL vuelve a ser el mismo: la revisita avisa y después aborta."""
+    d = StuckDetector(3)
+    e1 = {"cmd": "str_replace", "path": "c.py", "old": "a * b * 2", "new": "a * b"}
+    e2 = {"cmd": "str_replace", "path": "c.py", "old": "a * b", "new": "a * b * 2"}
+    seq = [(e2, "editado", "T2"), (A, "1 failed", "T2"), (e1, "editado", "T1"), (A, "1 failed", "T1"),
+           (e2, "editado", "T2"), (A, "1 failed", "T2"), (e1, "editado", "T1"), (A, "1 failed", "T1"),
+           (e2, "editado", "T2"), (A, "1 failed", "T2")]
+    res = [d.update(a, o, s) for a, o, s in seq]
+    assert res[5] == WARN and res[-1] == STUCK and STUCK not in res[:-1]

@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from ..aci.actions import ACIContext, LintError, execute
+from ..aci.actions import ACIContext, LintError, execute, repo_overview
 from ..aci.protocol import ActionError, parse_action
 from ..config import Config
 from ..events import Event, EventLog, Observer
@@ -55,11 +55,13 @@ def run_episode(task: str, llm: LLMClient, cfg: Config, *, sandbox: Sandbox | No
         history: list[Event] = []
         stuck = StuckDetector(cfg.stuck_repeats, cfg.stuck_warn_first)
         est = TokenEstimator()
+        # Se calcula una sola vez: el mensaje inicial no puede cambiar (caché KV, ADR-007)
+        prompt_task = f"{task}\n\nARCHIVOS DEL REPO:\n{repo_overview(cfg)}"
 
         for step in range(cfg.max_steps):
             steps = step + 1
             t0 = time.time()
-            msgs = build_messages(task, history, cfg, est)
+            msgs = build_messages(prompt_task, history, cfg, est)
             comp = llm.complete(msgs)
             est.observe(messages_chars(msgs), comp.prompt_tokens)
 
@@ -84,7 +86,7 @@ def run_episode(task: str, llm: LLMClient, cfg: Config, *, sandbox: Sandbox | No
                 flags.append("internal_error")
 
             head = git.commit_if_dirty(_commit_msg(step, act)) or git.head()
-            verdict = stuck.update(act, obs, head, ok)
+            verdict = stuck.update(act, obs, git.tree(), ok)
             if verdict == WARN:
                 obs += "\n" + WARNING
                 flags.append("stuck_warning")

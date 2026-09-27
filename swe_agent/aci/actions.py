@@ -6,6 +6,7 @@ Cada rechazo es un ActionError con feedback accionable para el modelo.
 from __future__ import annotations
 
 import difflib
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -102,7 +103,7 @@ def ac_view(act: dict, ctx: ACIContext) -> Outcome:
     if full.is_dir():
         return Outcome(_list_dir(full, cfg))
     if not full.is_file():
-        raise ActionError(f"no existe: {act['path']}")
+        raise ActionError(f"no existe: {act['path']}." + _missing_hint(act["path"], cfg))
     lines = read_text(full)[0].splitlines()
     off = act.get("offset", 0)
     if lines and off >= len(lines):
@@ -128,6 +129,40 @@ def _list_dir(full: Path, cfg: Config) -> str:
         f"\n...[+{extra} entradas]" if extra > 0 else "")
 
 
+_SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache",
+              ".mypy_cache", "dist", "build", "target"}
+
+
+def repo_files(cfg: Config, limit: int = 2_000) -> list[str]:
+    """Archivos del repo (rutas posix relativas), sin carpetas de dependencias ni caches."""
+    out: list[str] = []
+    for root, dirs, files in os.walk(cfg.workspace):
+        dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS)
+        base = Path(root).relative_to(cfg.workspace)
+        out.extend((base / f).as_posix() for f in sorted(files))
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
+def repo_overview(cfg: Config, max_entries: int = 60) -> str:
+    """Listado de hasta 2 niveles para el mensaje inicial (anticipo mínimo del repo map de F2).
+    Evita el fallo observado con Qwen3 8B: adivinar rutas (src/calc.py) en vez de mirar."""
+    files = [f for f in repo_files(cfg) if f.count("/") <= 1]
+    shown = files[:max_entries]
+    more = f"\n...[+{len(files) - len(shown)} archivos; usa <<view path=.>>]" if len(files) > len(shown) else ""
+    return "\n".join(shown) + more if shown else "(repo vacío)"
+
+
+def _missing_hint(rel: str, cfg: Config) -> str:
+    files = repo_files(cfg)
+    name = PurePosixPath(rel.replace("\\", "/")).name
+    same_name = [f for f in files if PurePosixPath(f).name == name]
+    close = same_name or difflib.get_close_matches(rel.replace("\\", "/"), files, n=3, cutoff=0.5)
+    hint = f" ¿Quisiste decir: {', '.join(close[:3])}?" if close else ""
+    return hint + " Usa <<view path=.>> para ver qué archivos existen."
+
+
 def ac_create(act: dict, ctx: ACIContext) -> Outcome:
     full = resolve_path(act["path"], ctx.cfg)
     if full.exists():
@@ -136,9 +171,12 @@ def ac_create(act: dict, ctx: ACIContext) -> Outcome:
     rel = _rel(full, ctx.cfg)
     if ctx.cfg.lint_on_edit and (err := check_syntax(rel, content)):
         raise LintError(f"el archivo tendría un error de sintaxis, no se creó: {err}")
+    twins = [f for f in repo_files(ctx.cfg) if PurePosixPath(f).name == full.name]
     full.parent.mkdir(parents=True, exist_ok=True)
     write_text(full, content)
-    return Outcome(f"creado {rel} ({len(content.splitlines())} líneas)")
+    note = (f"\n(ojo: ya existe {', '.join(twins[:3])} con el mismo nombre; si querías "
+            "modificarlo, edita ese con str_replace)") if twins else ""
+    return Outcome(f"creado {rel} ({len(content.splitlines())} líneas){note}")
 
 
 def ac_str_replace(act: dict, ctx: ACIContext) -> Outcome:
@@ -151,7 +189,7 @@ def ac_str_replace(act: dict, ctx: ACIContext) -> Outcome:
     if old == new:
         raise ActionError("old == new: nada que cambiar")
     if not full.is_file():
-        raise ActionError(f"no existe: {act['path']}; para archivos nuevos usa create")
+        raise ActionError(f"no existe: {act['path']}." + _missing_hint(act["path"], cfg))
     text, newline = read_text(full)
     flags: list[str] = []
 

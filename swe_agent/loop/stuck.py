@@ -1,7 +1,8 @@
 """Stuck detector v2 (ADR-008). Dueño: Claude.
 
-Firma de paso = (acción canónica, observación normalizada, HEAD de git). Con git_head en
-la firma, correr el mismo test que falla igual DESPUÉS de editar no cuenta como repetición.
+Firma de paso = (acción canónica, observación normalizada, árbol de git). Con el estado
+en la firma, correr el mismo test que falla igual DESPUÉS de editar no cuenta como
+repetición; volver al MISMO contenido y correrlo otra vez, sí (revisita).
 """
 from __future__ import annotations
 
@@ -36,23 +37,36 @@ class StuckDetector:
         self.sigs: list[str] = []
         self.errors_in_row = 0
         self.warned = False
+        self.revisits = 0
 
-    def update(self, action: dict | None, observation: str, git_head: str | None,
+    def update(self, action: dict | None, observation: str, state: str | None,
                ok: bool = True) -> str:
-        """Devuelve OK, WARN (avisar al modelo) o STUCK (abortar)."""
+        """Devuelve OK, WARN (avisar al modelo) o STUCK (abortar).
+
+        `state` = hash del ÁRBOL de git (contenido), no del commit: así volver a un
+        contenido ya visto (a*b -> a*b*2 -> a*b) cuenta como el mismo estado.
+        """
         act = canonical(action) if action is not None else "INVALID"
-        key = f"{act}\x00{normalize(observation)}\x00{git_head}"
-        self.sigs.append(hashlib.sha1(key.encode("utf-8", "replace")).hexdigest())
+        key = f"{act}\x00{normalize(observation)}\x00{state}"
+        sig = hashlib.sha1(key.encode("utf-8", "replace")).hexdigest()
+        # Revisita: mismo comando, mismo código, mismo resultado que un paso NO inmediato.
+        # Es la oscilación que el ciclo de orden 2/3 no ve (observada con Qwen3 8B).
+        if action is not None and action["cmd"] == "bash" and sig in self.sigs[:-1]:
+            self.revisits += 1
+        self.sigs.append(sig)
         self.errors_in_row = 0 if ok else self.errors_in_row + 1
 
         if self._repeating(self.repeats) or self._cycle() or \
-                self.errors_in_row >= 2 * self.repeats:
+                self.errors_in_row >= 2 * self.repeats or self.revisits >= self.repeats:
             return STUCK
+        if self.warn_first and self.revisits == 1 and not self.warned:
+            self.warned = True
+            return WARN
         # Aviso un paso ANTES del umbral: se aborta igual con <= `repeats` pasos idénticos
         if self.warn_first and not self.warned and self._repeating(self.repeats - 1):
             self.warned = True
             return WARN
-        if not self._repeating(2):
+        if not self._repeating(2) and self.revisits == 0:
             self.warned = False     # si se recuperó, un bucle futuro vuelve a avisar
         return OK
 

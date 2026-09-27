@@ -191,6 +191,27 @@ def test_submit_sin_cambios_rechazado_y_con_cambios_muestra_parche(ctx):
     assert obs.startswith("SUBMIT") and "+    return a * b" in obs
 
 
+def test_no_existe_sugiere_la_ruta_real(ctx):
+    """Qwen3 8B pidió src/calc.py cuando el archivo es calc.py."""
+    with pytest.raises(ActionError, match=r"¿Quisiste decir: calc\.py\?.*view path=\."):
+        run(ctx, cmd="view", path="src/calc.py")
+    with pytest.raises(ActionError, match="calc.py"):
+        run(ctx, cmd="str_replace", path="src/calc.py", old="a", new="b")
+
+
+def test_create_avisa_si_ya_existe_uno_con_el_mismo_nombre(ctx):
+    assert "ojo: ya existe calc.py" in run(ctx, cmd="create", path="src/calc.py", content="x = 1\n")
+
+
+def test_repo_overview_lista_dos_niveles_sin_git(ctx):
+    from swe_agent.aci.actions import repo_overview
+    (ctx.cfg.workspace / "a" / "b" / "c").mkdir(parents=True)
+    (ctx.cfg.workspace / "a" / "x.py").write_text("")
+    (ctx.cfg.workspace / "a" / "b" / "c" / "hondo.py").write_text("")
+    ov = repo_overview(ctx.cfg)
+    assert "calc.py" in ov and "a/x.py" in ov and "hondo" not in ov and ".git" not in ov
+
+
 def test_truncate_conserva_inicio_y_final():
     t = truncate("A" * 100 + "Z" * 100, 50)
     assert t.startswith("A" * 25) and t.endswith("Z" * 25) and "truncado 150" in t

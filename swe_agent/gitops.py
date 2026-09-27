@@ -67,6 +67,10 @@ class EpisodeGit:
     def head(self) -> str:
         return self.run("rev-parse", "HEAD").strip()
 
+    def tree(self) -> str:
+        """Hash del contenido commiteado: igual para dos commits con los mismos archivos."""
+        return self.run("rev-parse", "HEAD^{tree}").strip()
+
     def dirty(self) -> bool:
         return bool(self.run("status", "--porcelain", "--", ".", *_EXCLUDES).strip())
 

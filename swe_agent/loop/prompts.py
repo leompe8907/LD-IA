@@ -16,7 +16,9 @@ Qué hace cada una:
 - submit: termina. Úsalo solo cuando los tests pasen.
 
 Reglas:
-- Las rutas son relativas a la raíz del repo.
+- Las rutas son relativas a la raíz del repo. Las de los ejemplos (src/app.py) son solo
+  ilustrativas: usa las de ARCHIVOS DEL REPO, y nunca inventes una ruta.
+- Para arreglar código, edita el archivo que ya existe; no crees una copia en otra carpeta.
 - Lee el código con view antes de editarlo.
 - En <<OLD>> copia el texto tal cual, SIN los números de línea que muestra view.
 - Si old aparece varias veces, agrega líneas vecinas para que sea único.

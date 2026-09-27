@@ -123,6 +123,15 @@ def test_repo_sucio_no_arranca(cfg):
         run_episode("x", ScriptedLLM([]), cfg, sandbox=ScriptedSandbox())
 
 
+def test_mensaje_inicial_incluye_archivos_del_repo_y_no_cambia(cfg):
+    llm = ScriptedLLM(["<<view path=calc.py>>", "<<view path=.>>"])
+    cfg.max_steps = 2
+    run_episode("x", llm, cfg, sandbox=ScriptedSandbox())
+    first = llm.calls[0][1]["content"]
+    assert "ARCHIVOS DEL REPO" in first and "test_calc.py" in first
+    assert llm.calls[1][1]["content"] == first              # prefijo estable
+
+
 def test_historial_enviado_al_modelo_no_incluye_think(cfg):
     llm = ScriptedLLM(["<think>secreto</think>\n<<view path=calc.py>>", "<<view path=.>>"])
     cfg.max_steps = 2
