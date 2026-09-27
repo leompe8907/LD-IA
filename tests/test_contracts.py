@@ -8,7 +8,7 @@ import pytest
 from swe_agent.config import Config
 from swe_agent.events import SCHEMA_VERSION, Event, EventLog
 from swe_agent.llm import Completion
-from swe_agent.sandbox import CommandResult, make_sandbox
+from swe_agent.sandbox import CommandResult, Sandbox, make_sandbox
 from swe_agent.telemetry import compute_metrics
 
 from .conftest import git
@@ -59,8 +59,17 @@ def test_command_result_defaults():
     assert not r.timed_out and r.duration_s == 0.0
 
 
-@pytest.mark.parametrize("stub", [lambda: make_sandbox(None), lambda: compute_metrics([])])
-def test_stubs_de_antigravity_pendientes(stub):
-    """Se borra cuando Antigravity implemente sandbox/telemetría."""
-    with pytest.raises(NotImplementedError):
-        stub()
+def test_make_sandbox_instancia_local(make_repo, log_dir):
+    cfg = Config(workspace=make_repo(), log_dir=log_dir, sandbox="local")
+    sb = make_sandbox(cfg)
+    try:
+        assert isinstance(sb, Sandbox)
+    finally:
+        sb.close()
+
+
+def test_compute_metrics_contrato():
+    m = compute_metrics([])
+    assert m.status == "unknown"
+    assert m.steps == 0
+
