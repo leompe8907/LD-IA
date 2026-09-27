@@ -9,7 +9,54 @@ Fuente única de verdad entre **Claude** (Claude Code) y **Antigravity**. Reglas
   `telemetry/metrics.py`): solo cambios **aditivos** (campos nuevos con default).
   Renombrar o quitar requiere un ADR.
 
-Estado: **Fase 1 — contratos commiteados; implementación pendiente de arranque.**
+Estado: **Fase 1: contratos commiteados (`95221f4`); plan de trabajo acordado abajo; implementación pendiente del OK del usuario.**
+
+---
+
+## Plan de trabajo de la Fase 1
+
+Las dos partes corren **en paralelo**: nadie espera al otro. Claude prueba el loop con un
+`FakeSandbox` (subprocess en el host) hasta que llegue el de Antigravity. Antigravity prueba
+el logger con registros armados a mano según `events.py`.
+
+### Antigravity — rama `fase1/antigravity-sandbox`, carpeta `LD IA`
+
+| ID | Tarea | Archivos | Listo cuando |
+|---|---|---|---|
+| A1 | `LocalSandbox` | `sandbox/local.py` | Cumple las reglas de `sandbox/base.py`. **Ojo:** en Windows, `bash` del PATH es `WindowsApps\bash.exe` (lanza WSL / docker-desktop). Usar Git Bash (`C:\Program Files\Git\bin\bash.exe` o `git --exec-path`/`../../bin/bash.exe`). Timeout que mata el árbol (`taskkill /T /F` en Windows, `killpg` en POSIX). |
+| A2 | `DockerSandbox` | `sandbox/docker.py` | Contenedor por episodio (ADR-009). `setup_cmd` con red y después `docker network disconnect`. **Ojo:** matar el `docker exec` en el host NO mata el proceso dentro del contenedor: envolver con `timeout -s KILL <n>` dentro del contenedor. |
+| A3 | `DefaultPolicy` | `sandbox/policy.py` | `DefaultPolicy().check(cmd) -> str \| None` por tokens (`shlex`), no por substring. |
+| A4 | `make_sandbox(cfg)` | `sandbox/base.py` | Devuelve Local o Docker según `cfg.sandbox`. `SandboxError` claro si el daemon no responde. |
+| A5 | Imagen | `docker/Dockerfile` | `python:3.12-slim` + git + bash + pytest, tag `swe-agent-sandbox:latest`, comando de build documentado. |
+| A6 | Telemetría | `telemetry/logger.py`, `telemetry/metrics.py` | `ConsoleLogger(stream=sys.stderr)` es un `Observer`; `compute_metrics(records)` puro. |
+| A7 | Tests | `tests/test_sandbox.py`, `test_policy.py`, `test_telemetry.py` | Local siempre; Docker con `@pytest.mark.docker`. Reemplazar el test de stubs de `test_contracts.py`. |
+| A8 | Docs (al integrar) | sección en `README.md` | Setup de Docker Desktop + `.wslconfig` (límite de memoria para que quepa Devstral 24B). |
+
+### Claude — rama `fase1/claude-core`, worktree `LD IA-claude`
+
+| ID | Tarea | Archivos | Listo cuando |
+|---|---|---|---|
+| C1 | Parser del protocolo | `aci/protocol.py` | ADR-002 completo, `strip_thinking`, compatibilidad con el formato viejo. `tests/test_parser.py`. |
+| C2 | ACI + editor + linter | `aci/actions.py`, `aci/linter.py` | `is_relative_to`, conserva LF/CRLF del archivo, rechaza archivos no-UTF-8, `compile()` + revertir, detección de prefijos de número de línea y sugerencia con `difflib`, truncado. `bash` = `policy.check` → `sandbox.run`. `tests/test_aci.py` (incluye path traversal y symlinks). |
+| C3 | Git del episodio | `gitops.py` | ADR-005: rama `agent/<ts>`, baseline, commit por edición, parche = `git diff <baseline>`, errores que no se tragan. |
+| C4 | Contexto | `loop/context.py` | ADR-007: presupuesto en tokens + bloques de K + resúmenes de una línea. `tests/test_context.py` con invariantes. |
+| C5 | Stuck v2 | `loop/stuck.py` | ADR-008. `tests/test_stuck.py`. |
+| C6 | Loop | `loop/agent.py` | `run_episode(task, llm, cfg, *, sandbox=None, policy=None, observers=()) -> EpisodeResult`; ninguna excepción corta el episodio salvo `LLMError`/`SandboxError` (→ status). `tests/test_loop.py` con los 4 criterios originales. |
+| C7 | Clientes LLM | `llm/ollama.py`, `llm/openai_compat.py`, `llm/anthropic.py`, `llm/mock.py` | Solo stdlib, reintentos con backoff + jitter, `LLMError`. Ollama: `num_ctx`, `think`, streaming, métricas. `tests/test_llm.py` contra un servidor HTTP falso local. |
+| C8 | Benchmark | `bench/speed.py` → `docs/BENCHMARK.md` | Lectura de prompt vs generación a 8k/16k, GPU vs CPU (`num_gpu=0`). **Requiere Ollama instalado.** |
+| C9 | Integración | `swe_agent_core.py` (fachada), `run_local.py`, `tests/test_e2e.py`, `README.md` | Después del merge de ambas ramas: episodio completo con `LocalSandbox` real. |
+
+### Integración
+1. El primero que termine mergea a `feature/fase1-hardening` con toda la suite en verde.
+2. El segundo mergea `feature/fase1-hardening` en su rama, corre la suite y después mergea.
+3. Claude hace C9; Antigravity hace A8.
+4. **Fase 1 terminada** = suite completa en verde (Docker con el daemon levantado), los 4
+   criterios originales como tests de pytest, `BENCHMARK.md` con números reales y el merge
+   a `main` aprobado por el usuario.
+
+### Lo que necesita el usuario (bloquea solo C8 y los tests Docker de A7)
+- Instalar Ollama y `ollama pull qwen3:8b`.
+- Levantar Docker Desktop.
 
 ---
 
@@ -211,3 +258,7 @@ no responde.
 
 - 2026-09-27 · Claude → Antigravity · Reemplazar el test `test_stubs_de_antigravity_pendientes`
   de `tests/test_contracts.py` cuando `make_sandbox` y `compute_metrics` estén implementados · abierto
+- 2026-09-27 · Claude → Antigravity · Nombres de módulos: se mantiene la estructura de la tabla
+  de dueños (`aci/protocol.py`, `loop/context.py`; no `parser/` ni `context/` de primer nivel)
+  y `docker/Dockerfile` (no en la raíz). `sandbox/policy.py` queda como propusiste · abierto
+- 2026-09-27 · Claude → Antigravity · Push a GitHub: solo cuando el usuario lo pida · abierto
