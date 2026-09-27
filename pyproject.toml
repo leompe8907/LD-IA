@@ -1,0 +1,17 @@
+[project]
+name = "swe-agent-local"
+version = "0.1.0"
+description = "Agente SWE minimalista para modelos locales (Ollama) y APIs cloud"
+requires-python = ">=3.11"
+dependencies = []  # el núcleo es solo stdlib; las deps opcionales llegan por fase
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "docker: requiere el daemon de Docker en ejecución (se salta si no está)",
+    "ollama: requiere Ollama en http://localhost:11434 (se salta si no está)",
+]
