@@ -1,0 +1,6 @@
+FROM qwen3:8b
+PARAMETER num_ctx 32768
+PARAMETER temperature 0
+PARAMETER top_p 0.9
+PARAMETER num_thread 6
+SYSTEM """Eres un agente de ingeniería de software. Resuelve la tarea emitiendo acciones en bloques <<ACTION>>{json}<<END>>. Lee antes de editar. Observa los resultados y corrige iterando. Cuando los tests pasen, emite submit."""

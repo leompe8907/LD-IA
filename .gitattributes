@@ -1,0 +1,2 @@
+# LF en todo el repo, también en Windows (dos agentes editan desde Windows: sin esto los diffs se ensucian con CRLF)
+* text=auto eol=lf

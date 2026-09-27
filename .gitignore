@@ -1,0 +1,9 @@
+# entorno de desarrollo
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# salidas de episodios (el EventLog vive en el host, nunca en el repo objetivo)
+logs/
+runs/
