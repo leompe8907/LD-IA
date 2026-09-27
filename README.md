@@ -1,185 +1,180 @@
-# 🤖 Mini-SWE-Agent Local
-### Agente de ingeniería de software minimalista, ejecutable 100% en tu hardware
+# Mini-SWE-Agent Local
 
-Arquitectura destilada del análisis de **OpenHands, SWE-agent, Mini-SWE-Agent,
-Agentless y Aider** — el scaffold commodity (sandbox + loop + ACI) con las lecciones
-de diseño de cada uno, corriendo con modelos locales vía Ollama.
+Agente de ingeniería de software minimalista (estilo Mini-SWE-Agent / SWE-agent) pensado para
+correr con modelos locales vía Ollama, y con cualquier API cloud detrás de la misma interfaz.
+Solo stdlib en runtime.
 
----
+> Lo desarrollan en conjunto **Claude Code** y **Antigravity**. Las decisiones de arquitectura,
+> los dueños de cada módulo y los pedidos entre agentes están en
+> [docs/DECISIONES.md](docs/DECISIONES.md).
 
-## 1. ¿Qué es esto?
-
-Un núcleo de agente SWE de ~280 líneas (sin dependencias externas) que:
-
-| Pieza | Origen | Qué hace |
-|---|---|---|
-| **ACI restringido** | SWE-agent | Solo 5 acciones (`view`, `create`, `str_replace`, `bash`, `submit`), cada una validada |
-| **Editor validado** | SWE-agent | `old_str` debe ser único; devuelve diff; bloquea corrupciones |
-| **Estado en git** | Mini-SWE-Agent + Aider | Commit automático tras cada edición → reversibilidad total |
-| **Agente puro** | OpenHands V1 | historial → mensajes → acción. Sin estado mutable en el agente |
-| **EventLog append-only** | OpenHands V1 | JSONL auditable y replayable |
-| **Anti-loop** | OpenHands | Stuck detector por observaciones/acciones repetidas |
-| **Contexto acotado** | SWE-agent + OpenHands | Lectura paginada (100 líneas), salidas truncadas, historial condensado |
-
-## 2. Tu hardware: veredicto honesto
-
-| Recurso | Valor | Implicación |
-|---|---|---|
-| CPU | Ryzen 5 4600H (6C/12T, Zen 2) | ~4–8 tok/s con modelo 7–8B Q4 por CPU. Usable para agente paso a paso |
-| RAM | 40 GB | Tu gran activo: caben modelos Q4 de hasta ~24B (lentos pero posibles) |
-| VRAM | 4 GB | ⚠️ El 4600H lleva **Radeon Vega 6 integrada** (comparte RAM de sistema). ROCm para Vega 6 no es práctico → **inferencia 100% por CPU**. No pierdas tiempo con GPU offload |
-
-**Regla de pulso:** ~1 GB de RAM por cada 1B de parámetros a Q4.
-
-| Modelo | Tamaño Q4 | Velocidad estimada (tu CPU) | Uso recomendado |
-|---|---|---|---|
-| **Qwen3 8B** ⭐ | ~5.2 GB | 4–8 tok/s | Motor principal. Tool calling + modo thinking |
-| Qwen2.5-Coder-7B | ~4.7 GB | 5–9 tok/s | Alternativa especializada en código |
-| Devstral Small 24B | ~14.5 GB | 1.5–3 tok/s | Opcional: mejor en bucles agenticos, muy lento. Solo para corridas no interactivas |
-
-> **Expectativa realista:** con el 8B resolverás bugs de 1–2 archivos en repos
-> pequeños. Esto es para **aprender y validar la arquitectura**, no para
-> competir con SWE-bench (eso requiere modelos frontera en la nube — y el
-> cliente soporta ambos sin cambiar código).
-
----
-
-## 3. Setup paso a paso (tu máquina exacta)
-
-### 3.1 Instalar Ollama
-
-```bash
-# Linux
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Windows (PowerShell admin)
-winget install Ollama.Ollama
-```
-
-### 3.2 Descargar el modelo
-
-```bash
-ollama pull qwen3:8b        # ~5.2 GB de descarga
-```
-
-### 3.3 Crear el modelo afinado para agente (OBLIGATORIO)
-
-El `num_ctx` por defecto de Ollama es muy bajo para un agente (necesitas cargar
-archivos + salida de tests + historial). Usa el `Modelfile` incluido:
-
-```bash
-ollama create swe-qwen -f Modelfile
-```
-
-Contenido del Modelfile (ya incluido en este repo):
-
-```
-FROM qwen3:8b
-PARAMETER num_ctx 32768      # mínimo aceptable: 16384
-PARAMETER temperature 0      # determinismo para coding
-PARAMETER top_p 0.9
-PARAMETER num_thread 6       # cores FÍSICOS del 4600H (Zen 2: los SMT no ayudan a inferencia)
-```
-
-### 3.4 Verificar
-
-```bash
-ollama run swe-qwen "Di solo: OK"
-# Debe responder al instante. Ctrl+D para salir.
-
-# Test de velocidad real con contexto largo:
-ollama run swe-qwen --verbose "Resume: $(seq 1 2000 | tr '\n' ' ')"
-# Fíjate en 'eval rate': ese es tu tok/s real con carga de contexto
-```
-
-### 3.5 (Opcional) Devstral 24B para corridas lentas-but-mejor
-
-```bash
-ollama pull devstral           # 24B Q4_K_M, ~14.5 GB en RAM
-ollama create swe-devstral -f Modelfile.devstral
-```
-Úsalo solo para evaluación no interactiva (`run_local.py --model swe-devstral`).
-A 1.5–3 tok/s, un episodio de 10 pasos tarda 15–40 min.
-
----
-
-## 4. Correr el agente
-
-### 4.1 Test sin modelo (valida el núcleo en 5 segundos)
-
-```bash
-python test_core.py
-# Debe mostrar: episodio completo con bug arreglado, git commits por paso,
-# stuck detection, y recuperación de errores de formato.
-```
-
-### 4.2 Episodio real con el modelo local
-
-```bash
-# Terminal 1: servidor Ollama (si no está corriendo ya)
-ollama serve
-
-# Terminal 2:
-python run_local.py --repo ./repo_de_prueba --task "Arregla la función para que pase los tests"
-```
-
-Salida esperada por paso:
-```
-[step 0] view src/app.py
-[step 1] bash pytest -q            → exit=1 (1 failed)
-[step 2] str_replace src/app.py    → editado (+2 -1)
-[step 3] bash pytest -q            → exit=0
-[step 4] submit                    → SUBMIT + diff
-status: submitted | pasos: 5
-```
-
-Los eventos quedan en `logs/<timestamp>.jsonl` — replayables y auditables.
-
-### 4.3 Modo híbrido (local + cloud en el mismo código)
-
-Edita `run_local.py`:
-```python
-llm = OpenAICompatClient(
-    model="swe-qwen",
-    base_url="http://localhost:11434/v1",   # ← local
-    api_key="ollama",
-)
-# o para cloud, sin tocar nada más:
-# llm = OpenAICompatClient(model="gpt-4o-mini", api_key=os.environ["OPENAI_API_KEY"])
-```
-
----
-
-## 5. Hoja de ruta
+## Estado
 
 | Fase | Qué | Estado |
 |---|---|---|
-| 0 | Análisis del núcleo + plan | ✅ Este repo |
-| 1 | **Hardening: sandbox Docker intercambiable, tests del ACI** | 👉 HOY |
-| 2 | Repo map con tree-sitter como acción `search` | Pendiente |
-| 3 | Critic model (verificación del diff antes de submit) | Pendiente |
-| 4 | Pipeline tipo Agentless para bugs acotados | Pendiente |
-| 5 | CLI + evaluación en repos con tests + informe honesto | Pendiente |
+| 0 | Análisis del núcleo + plan | ✅ |
+| 1 | Hardening: paquete modular, ACI validado, sandbox Local/Docker, stuck v2, clientes LLM, benchmark | 🔧 integrado en `fase1/claude-core`, falta el benchmark real y los pedidos abiertos |
+| 2 | Repo map con tree-sitter como acción `search` | pendiente |
+| 3 | Critic (veredicto sobre diff + tests antes de aceptar submit) | pendiente |
+| 4 | Pipeline tipo Agentless para bugs acotados | pendiente |
+| 5 | CLI de evaluación + informe honesto con Qwen3 8B | pendiente |
 
-## 6. Protocolo de evaluación (Fase 5)
+**Todavía no hay números reales con el modelo local.** La tasa de éxito y los tiempos por paso
+se miden en la Fase 5; las velocidades de Ollama, con `bench/speed.py` (Fase 1).
 
-1. Crear 3 repos de prueba con bug + tests (calc, parser, CLI simple).
-2. Correr 3 episodios por modelo (swe-qwen, swe-devstral).
-3. Medir: pasos hasta submit, stucks, tasa de éxito (tests en verde), minutos/episodio.
-4. Documentar en `EVALUACION.md`: qué funcionó 100% local, qué no, y qué cambiarías con API frontera.
+## Arquitectura
 
-## 7. Troubleshooting
+```mermaid
+flowchart LR
+    T[Tarea] --> L
+    subgraph L[loop/agent.py: run_episode]
+        C[context.py<br/>presupuesto de tokens<br/>prefijo estable] --> M[LLMClient]
+        M --> P[aci/protocol.py<br/>parser de bloques crudos]
+        P --> A[aci/actions.py<br/>view · create · str_replace · bash · submit]
+        A --> S[loop/stuck.py<br/>firma acción+obs+git]
+    end
+    M -.-> O[Ollama nativo] & OA[OpenAI-compatible] & AN[Anthropic]
+    A -- archivos, lint, git --> H[(repo en el HOST<br/>rama agent/&lt;ts&gt;)]
+    A -- solo bash --> SB[Sandbox<br/>Local: Git Bash · Docker: /workspace]
+    L -- registros --> E[(EventLog JSONL<br/>fuera del repo)]
+    E --> CL[ConsoleLogger] & MT[compute_metrics]
+```
 
-| Síntoma | Causa | Fix |
+Decisiones clave (detalle en los ADR):
+
+| Pieza | Decisión | ADR |
 |---|---|---|
-| Respuestas cortas / "contexto lleno" | `num_ctx` bajo | Recrea el modelo con el Modelfile (32768) |
-| 2–3 tok/s | SMT/threads malos, modelo muy grande | `num_thread 6` (físicos); baja a 7B |
-| El agente repite la misma acción | Tarea mal acotada o modelo débil | Es el stuck detector trabajando — revisa el log y reformula la tarea |
-| `old_str aparece N veces` | ACI haciendo su trabajo | Pide al agente más contexto en `old` — es la lección #1 de SWE-agent |
-| OOM con devstral 24B | Otras apps comiendo RAM | Cierra navegador/IDE; el Q4 necesita ~16 GB libres |
+| Sandbox | **Solo ejecuta comandos.** Archivos, linter y git van por el host; así editor y commits son idénticos en Local y Docker | 001 |
+| Protocolo | **Bloques con contenido crudo**: el código no se escapa dentro de JSON (fallo n.º 1 de los 8B) | 002 |
+| Git | Cada episodio en su rama `agent/<ts>`, un commit por acción que cambia archivos, parche = `git diff <baseline>` | 005 |
+| EventLog | JSONL en el host con header/step/footer; logger y métricas son observers | 006 |
+| Contexto | Presupuesto en tokens y condensación **de a bloques** para que Ollama reutilice la caché KV | 007 |
+| Stuck | Firma (acción, observación normalizada, `git_head`): avisa en la 2.ª repetición, aborta en la 3.ª | 008 |
 
-## 8. Licencia y créditos
+### Protocolo de acciones
 
-MIT. Lecciones de diseño extraídas de OpenHands (MIT), SWE-agent (MIT),
-Mini-SWE-Agent, Agentless y Aider (Apache-2.0). Núcleo original escrito para
-este proyecto.
+```
+<<view path=src/app.py offset=0>>
+
+<<str_replace path=src/app.py>>
+<<OLD>>
+    return a + b
+<<NEW>>
+    return a * b
+<<END>>
+
+<<bash>>
+python -m pytest -q
+<<END>>
+
+<<create path=src/nuevo.py>>
+contenido crudo
+<<END>>
+
+<<submit>>
+```
+
+El editor rechaza `old` ausente o ambiguo (e indica líneas parecidas o dónde se repite),
+corrige los números de línea copiados de `view`, conserva LF/CRLF, se niega a tocar archivos
+binarios o no-UTF-8 y revierte las ediciones de Python que **introducen** un error de sintaxis.
+Cualquier respuesta malformada vuelve al modelo como observación `ERROR: …`.
+
+## Setup en esta máquina
+
+Hardware verificado: Ryzen 5 4600H (6C/12T), 40 GB de RAM, **NVIDIA GTX 1650 de 4 GB** (más la
+Vega integrada). La versión anterior de este README decía "solo CPU": era un error. Ollama
+reparte automáticamente capas entre GPU y CPU; `bench/speed.py` mide cuánto gana cada modo.
+
+```bash
+winget install Ollama.Ollama
+```
+
+```bash
+ollama pull qwen3:8b
+```
+
+Opcional, lento pero mejor en tareas agénticas (~14 GB en RAM):
+
+```bash
+ollama pull devstral
+```
+
+Entorno de desarrollo (Python ≥ 3.11):
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv/Scripts/python -m pip install pytest
+```
+
+En Windows se necesita **Git for Windows**: el `LocalSandbox` usa su Git Bash. El `bash.exe`
+de `WindowsApps` lanza WSL y no sirve.
+
+### Docker (sandbox aislado)
+
+*Sección a cargo de Antigravity (tarea A8): Docker Desktop, build de `docker/Dockerfile` y
+límite de memoria de WSL2 en `.wslconfig` para que quepa Devstral.*
+
+## Uso
+
+Tests del agente (sin modelo; los de Docker se saltan si el daemon está apagado):
+
+```bash
+.venv/Scripts/python -m pytest -q
+```
+
+Benchmark de Ollama (prefill vs generación vs caché KV, GPU automático vs solo CPU):
+
+```bash
+.venv/Scripts/python bench/speed.py --model qwen3:8b --out docs/BENCHMARK.md
+```
+
+Un episodio. El repo tiene que estar limpio: el agente trabaja en una rama `agent/<ts>` y no
+toca la tuya.
+
+```bash
+.venv/Scripts/python run_local.py --repo ../mi_repo --task "Arregla calc.mul para que pasen los tests" --sandbox local --test-cmd "python -m pytest -q"
+```
+
+Mismo episodio con una API cloud (clave en `ANTHROPIC_API_KEY` u `OPENAI_API_KEY`):
+
+```bash
+.venv/Scripts/python run_local.py --repo ../mi_repo --task "..." --provider anthropic
+```
+
+Cada episodio deja `logs/<timestamp>.jsonl`, que se puede re-analizar con
+`swe_agent.telemetry.compute_metrics(EventLog.replay(path))`.
+
+## Mapa del código
+
+```
+swe_agent/
+├── config.py           Config del episodio (contrato compartido)
+├── events.py           Event, EventLog (JSONL + observers)
+├── gitops.py           rama agent/<ts>, baseline, commits, parche
+├── aci/                protocol.py (parser) · actions.py (editor, rutas) · linter.py
+├── loop/               agent.py (run_episode) · context.py · stuck.py · prompts.py
+├── llm/                base.py (Protocol) · ollama.py · openai_compat.py · anthropic.py · mock.py
+├── sandbox/            base.py · local.py · docker.py · policy.py        (Antigravity)
+└── telemetry/          logger.py · metrics.py                             (Antigravity)
+bench/speed.py          benchmark de Ollama
+docker/Dockerfile       imagen del sandbox                                 (Antigravity)
+swe_agent_core.py       fachada con los nombres del núcleo original
+```
+
+## Troubleshooting
+
+| Síntoma | Causa | Qué hacer |
+|---|---|---|
+| `el repo tiene cambios sin commitear` | El agente no mezcla su trabajo con el tuyo | Commitea o haz stash antes |
+| `sandbox_error: Docker no está disponible` | Docker Desktop apagado | Ábrelo, o usa `--sandbox local` |
+| `El modelo … no está descargado` | Falta el `ollama pull` | `ollama pull qwen3:8b` |
+| El paso tarda minutos antes de generar | Lectura del prompt en CPU | Mira `prompt_eval_s` en el log; la caché KV lo reduce entre pasos del mismo bloque |
+| `stuck` | El detector cortó un bucle | Revisa el log y reformula la tarea |
+
+## Licencia y créditos
+
+MIT. Lecciones de diseño de OpenHands (MIT), SWE-agent (MIT), Mini-SWE-Agent, Agentless y
+Aider (Apache-2.0). Código original de este proyecto.
