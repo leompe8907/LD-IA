@@ -18,7 +18,7 @@ Reglas que toda implementación cumple (las verifican los tests de Antigravity):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from ..config import Config
@@ -36,11 +36,13 @@ class CommandResult:
     duration_s: float = 0.0
 
 
+@runtime_checkable
 class Sandbox(Protocol):
     def run(self, cmd: str, timeout: float) -> CommandResult: ...
     def close(self) -> None: ...
 
 
+@runtime_checkable
 class CommandPolicy(Protocol):
     def check(self, cmd: str) -> str | None:
         """None si el comando está permitido; si no, el motivo (se devuelve al modelo).
@@ -51,4 +53,10 @@ class CommandPolicy(Protocol):
 def make_sandbox(cfg: Config) -> Sandbox:
     """Fábrica según cfg.sandbox ("docker" | "local"). Docker: un contenedor por
     episodio, cfg.setup_cmd con red y luego red cortada (ADR-009)."""
-    raise NotImplementedError("Antigravity: fase1/antigravity-sandbox")
+    if cfg.sandbox == "local":
+        from .local import LocalSandbox
+        return LocalSandbox(cfg)
+    elif cfg.sandbox == "docker":
+        from .docker import DockerSandbox
+        return DockerSandbox(cfg)
+    raise SandboxError(f"Tipo de sandbox desconocido: '{cfg.sandbox}'")
