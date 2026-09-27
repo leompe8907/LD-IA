@@ -78,7 +78,6 @@ def test_timeout_real_de_local_sandbox_llega_como_observacion(make_repo, log_dir
 
 # --------------------------------------------------------------------------- pedidos abiertos
 
-@pytest.mark.xfail(strict=True, reason="pedido a Antigravity: compute_metrics con tokens None")
 def test_metricas_toleran_proveedores_sin_tokens(make_repo, log_dir):
     cfg = Config(workspace=make_repo(), log_dir=log_dir, sandbox="local")
     from .fakes import ScriptedSandbox
@@ -87,7 +86,6 @@ def test_metricas_toleran_proveedores_sin_tokens(make_repo, log_dir):
     assert m.tokens_estimated
 
 
-@pytest.mark.xfail(strict=True, reason="pedido a Antigravity: policy separa operadores entre comillas")
 @pytest.mark.parametrize("cmd", ['grep -nE "foo|bar" calc.py',
                                  'python -c "import sys; print(sys.version)"',
                                  "echo 'a && b'"])

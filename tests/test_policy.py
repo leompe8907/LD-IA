@@ -60,7 +60,7 @@ def test_fork_bomb(policy: DefaultPolicy):
     assert policy.check(":(){ :|:& };:") is not None
 
 
-def test_sintaxis_invalida(policy: DefaultPolicy):
+def test_sintaxis_invalida_no_bloquea_pasa_a_bash(policy: DefaultPolicy):
+    # La política es solo un freno: sintaxis compleja o rota pasa para que bash reporte el error
     res = policy.check('echo "comilla sin cerrar')
-    assert res is not None
-    assert "sintaxis inválida" in res
+    assert res is None

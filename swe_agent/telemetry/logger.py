@@ -1,7 +1,8 @@
 """Logger en vivo para consola (ADR-006, A6). Dueño: Antigravity.
 
 Recibe eventos del EventLog en tiempo real (Observer) y produce una salida compacta,
-legible y enriquecida para el operador humano.
+legible y robusta ante streams con codificaciones no-UTF-8 (ej. cp1252 en Windows).
+Usa etiquetas ASCII seguras para evitar UnicodeEncodeError.
 """
 from __future__ import annotations
 
@@ -16,6 +17,13 @@ class ConsoleLogger:
         self.stream = stream if stream is not None else sys.stderr
         self.verbose = verbose
 
+    def _write(self, text: str) -> None:
+        try:
+            self.stream.write(text)
+        except UnicodeEncodeError:
+            safe = text.encode("ascii", errors="replace").decode("ascii")
+            self.stream.write(safe)
+
     def __call__(self, record: dict) -> None:
         rec_type = record.get("type")
         if rec_type == "header":
@@ -24,7 +32,10 @@ class ConsoleLogger:
             self._log_step(record)
         elif rec_type == "footer":
             self._log_footer(record)
-        self.stream.flush()
+        try:
+            self.stream.flush()
+        except Exception:
+            pass
 
     def _log_header(self, r: dict) -> None:
         task = r.get("task", "(sin tarea)")
@@ -32,8 +43,8 @@ class ConsoleLogger:
             task = task[:77] + "..."
         model = r.get("model", "local")
         base = str(r.get("baseline_sha", "unknown"))[:7]
-        self.stream.write(f"\n🚀 [INICIO] Tarea: {task}\n")
-        self.stream.write(f"   Modelo: {model} | Baseline: {base}\n")
+        self._write(f"\n[INICIO] Tarea: {task}\n")
+        self._write(f"   Modelo: {model} | Baseline: {base}\n")
 
     def _log_step(self, r: dict) -> None:
         step = r.get("step", 0)
@@ -55,7 +66,7 @@ class ConsoleLogger:
                 detail = ""
             action_desc = f"{cmd} {detail}".strip()
         else:
-            action_desc = "formato inválido"
+            action_desc = "formato invalido"
 
         # Resumen de observación (primera línea relevante)
         obs = r.get("observation", "").strip()
@@ -65,12 +76,12 @@ class ConsoleLogger:
         else:
             obs_preview = "(sin salida)"
 
-        status_tag = "✓" if ok else "✗"
+        status_tag = "[OK]" if ok else "[ERR]"
         git_tag = f" | git:{str(git_head)[:7]}" if git_head else ""
-        flag_tag = f" ⚠️ [{', '.join(flags)}]" if flags else ""
+        flag_tag = f" [!] [{', '.join(flags)}]" if flags else ""
 
-        self.stream.write(
-            f"[{step:02d} | {dur:4.1f}s] {action_desc} {status_tag} ➜ {obs_preview}{git_tag}{flag_tag}\n"
+        self._write(
+            f"[{step:02d} | {dur:4.1f}s] {action_desc} {status_tag} -> {obs_preview}{git_tag}{flag_tag}\n"
         )
 
     def _log_footer(self, r: dict) -> None:
@@ -78,4 +89,4 @@ class ConsoleLogger:
         steps = r.get("steps", 0)
         err = r.get("error")
         err_str = f" | error: {err}" if err else ""
-        self.stream.write(f"🏁 [FIN] Status: {status} | Pasos: {steps}{err_str}\n\n")
+        self._write(f"[FIN] Status: {status} | Pasos: {steps}{err_str}\n\n")

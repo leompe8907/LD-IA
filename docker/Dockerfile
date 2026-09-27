@@ -18,7 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     coreutils \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory '*'
 
 # Instalar pytest en el entorno de Python
 RUN pip install --no-cache-dir pytest

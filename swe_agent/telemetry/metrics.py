@@ -88,10 +88,13 @@ def compute_metrics(records: list[dict]) -> EpisodeMetrics:
 
     for r in step_records:
         llm = r.get("llm")
-        if isinstance(llm, dict) and "prompt_tokens" in llm and "completion_tokens" in llm:
-            prompt_tokens += int(llm.get("prompt_tokens", 0))
-            completion_tokens += int(llm.get("completion_tokens", 0))
-            prompt_eval_s += float(llm.get("prompt_eval_s", 0.0))
+        pt = llm.get("prompt_tokens") if isinstance(llm, dict) else None
+        ct = llm.get("completion_tokens") if isinstance(llm, dict) else None
+
+        if pt is not None and ct is not None:
+            prompt_tokens += int(pt)
+            completion_tokens += int(ct)
+            prompt_eval_s += float(llm.get("prompt_eval_s") or 0.0)
         else:
             tokens_estimated = True
             # Estimación fallback: chars / 4
@@ -109,9 +112,12 @@ def compute_metrics(records: list[dict]) -> EpisodeMetrics:
 
         # Rastrear commits por cambios en git_head
         gh = r.get("git_head")
-        if gh and gh != curr_git_head:
-            commits += 1
-            curr_git_head = gh
+        if gh:
+            if curr_git_head is None:
+                curr_git_head = gh
+            elif gh != curr_git_head:
+                commits += 1
+                curr_git_head = gh
 
     # Parche y diff
     patch_text = footer.get("patch", "") if footer else ""

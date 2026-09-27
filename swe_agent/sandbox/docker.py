@@ -175,7 +175,9 @@ class DockerSandbox(Sandbox):
             exit_code = p.returncode
 
             # Si timeout dentro de linux expiró, devuelve 124 o 137 (SIGKILL)
-            timed_out = exit_code in (124, 137)
+            # Solo marcar 137 como timed_out si la duración alcanzó el timeout esperado,
+            # distinguiendo así un timeout de un OOM-kill temprano por el kernel (--memory 4g)
+            timed_out = exit_code == 124 or (exit_code == 137 and duration_s >= max(0.5, timeout - 1.5))
             if timed_out:
                 exit_code = 124
 

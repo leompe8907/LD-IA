@@ -1,17 +1,15 @@
 """Política de comandos de primera línea (ADR-001, A3). Dueño: Antigravity.
 
-Evalúa comandos mediante tokenización (shlex) en vez de coincidencia ingenua de substrings.
-Esto permite distinguir un comando real como `curl https://...` de un comando legítimo
-como `echo "curl es genial"` o `pytest -k test_curl`.
+Evalúa comandos mediante tokenización (shlex) con punctuation_chars=True en vez de coincidencia
+ingenua de substrings o regex cruda.
+Esto preserva comillas con operadores legítimos (`grep -E "a|b"`, `python -c "import sys; print(1)"`,
+`echo 'a && b'`) sin bloquearlos. Si el parseo falla por sintaxis compleja, se permite (bash devolverá
+el error sintáctico; la política es un freno defensivo, no la frontera de seguridad).
 """
 from __future__ import annotations
 
-import re
 import shlex
 from typing import Sequence
-
-# Separadores de comandos en shell
-_CMD_SPLIT_RE = re.compile(r"(?:&&|\|\||[;&|\n])")
 
 
 class DefaultPolicy:
@@ -55,26 +53,37 @@ class DefaultPolicy:
         if ":(){:|:&};:" in compact:
             return "comando no permitido por política: fork bomb detectada"
 
-        # Dividir pipelines y comandos encadenados (;, &&, ||, |, newline)
-        subcmds = _CMD_SPLIT_RE.split(cmd_str)
+        # Tokenizar preservando comillas y tratando operadores como puntuación
+        try:
+            lexer = shlex.shlex(cmd_str, posix=True, punctuation_chars=True)
+            lexer.whitespace_split = False
+            all_tokens = list(lexer)
+        except Exception:
+            # Si el parseo falla (p.ej. sintaxis compleja de bash con comillas no estándar),
+            # permitimos que pase a bash (la política es solo un freno de primera línea)
+            return None
 
-        for sub in subcmds:
-            sub = sub.strip()
-            if not sub:
-                continue
+        if not all_tokens:
+            return None
 
-            try:
-                tokens = shlex.split(sub, posix=True)
-            except ValueError as e:
-                return f"comando con sintaxis inválida: {e}"
+        # Separadores de comandos y pipelines
+        separators = {";", "&", "&&", "|", "||", "\n"}
+        subcommands: list[list[str]] = []
+        current: list[str] = []
+        for t in all_tokens:
+            if t in separators:
+                if current:
+                    subcommands.append(current)
+                    current = []
+            else:
+                current.append(t)
+        if current:
+            subcommands.append(current)
 
-            if not tokens:
-                continue
-
+        for tokens in subcommands:
             # Omitir asignaciones de variables de entorno al inicio (ej: VAR=1 pytest)
             i = 0
             while i < len(tokens) and "=" in tokens[i] and not tokens[i].startswith("-"):
-                # Si es asignación del tipo FOO=bar
                 var_name = tokens[i].split("=", 1)[0]
                 if var_name.isidentifier():
                     i += 1
@@ -93,14 +102,13 @@ class DefaultPolicy:
 
             # 2. Subcomandos de git (ej. git push)
             if exe == "git":
-                # Buscar el primer subcomando no-opción
                 for arg in args:
                     if not arg.startswith("-"):
                         if arg in self.banned_git_subcommands:
                             return f"comando no permitido por política: 'git {arg}' está bloqueado"
                         break
 
-            # 3. Comandos destructivos (rm recursivo sobre raíz o paths críticos)
+            # 3. Comandos destructivos (rm recursivo sobre ruta crítica)
             if exe == "rm":
                 has_recursive = any(
                     arg in ("-r", "-R", "-rf", "-fr", "-rfi", "-rif")
@@ -108,7 +116,6 @@ class DefaultPolicy:
                     for arg in args
                 )
                 if has_recursive:
-                    # Chequear targets
                     for arg in args:
                         if arg.startswith("-"):
                             continue

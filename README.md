@@ -114,8 +114,44 @@ de `WindowsApps` lanza WSL y no sirve.
 
 ### Docker (sandbox aislado)
 
-*Sección a cargo de Antigravity (tarea A8): Docker Desktop, build de `docker/Dockerfile` y
-límite de memoria de WSL2 en `.wslconfig` para que quepa Devstral.*
+El modo `docker` ejecuta cada episodio en un contenedor efímero con red deshabilitada (`--network none`), capacidades reducidas (`--cap-drop=ALL`, `--security-opt no-new-privileges`) y límites de recursos estrictos (4 GB RAM, 4 CPUs, 256 PIDs), montando el repositorio en `/workspace`.
+
+#### 1. Construir la imagen del sandbox
+
+La imagen base incluye `python:3.12-slim`, `git`, `bash`, `coreutils` (para terminación de procesos por timeout) y `pytest`:
+
+```bash
+docker build -t swe-agent-sandbox:latest -f docker/Dockerfile .
+```
+
+#### 2. Ajuste de memoria WSL2 (`.wslconfig`)
+
+En Windows 10/11, Docker Desktop corre sobre WSL2. Por defecto, WSL2 puede consumir hasta el 50% de tu RAM física, compitiendo directamente con modelos locales en Ollama (especialmente Devstral 24B, que requiere ~15 GB en RAM).
+
+Para garantizar estabilidad, crea o edita el archivo `%USERPROFILE%\.wslconfig` (ej: `C:\Users\leona\.wslconfig`) con:
+
+```ini
+[wsl2]
+# Reserva un máximo de 8 GB para la VM de WSL2 / Docker, dejando ~32 GB libres para el host y Ollama
+memory=8GB
+# Asigna 4 de los 6 núcleos físicos a WSL2
+processors=4
+swap=4GB
+```
+
+Aplica los cambios reiniciando WSL2 desde PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+#### 3. Ejecutar con Docker
+
+Asegúrate de que Docker Desktop esté iniciado y corre el episodio:
+
+```bash
+.venv/Scripts/python run_local.py --repo ../mi_repo --task "Arregla calc.mul" --sandbox docker
+```
 
 ## Uso
 
